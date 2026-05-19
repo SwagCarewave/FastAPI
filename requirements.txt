@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+websockets
+scikit-learn
+numpy
+pandas
+torch
+transformers
+openai
+sqlalchemy
+pymysql
+python-dotenv
+httpx
