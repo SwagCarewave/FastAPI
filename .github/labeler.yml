@@ -1,0 +1,29 @@
+backend:
+  - changed-files:
+    - any-glob-to-any-file: 'app/api/**'
+
+database:
+  - changed-files:
+    - any-glob-to-any-file: 'app/db/**'
+
+ai/ml:
+  - changed-files:
+    - any-glob-to-any-file: 'app/models/**'
+    - any-glob-to-any-file: 'app/llm/**'
+
+websocket:
+  - changed-files:
+    - any-glob-to-any-file: 'app/ruview/**'
+
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file: 'requirements*.txt'
+
+docker:
+  - changed-files:
+    - any-glob-to-any-file: 'Dockerfile'
+    - any-glob-to-any-file: 'docker-compose*.yml'
+
+ci/cd:
+  - changed-files:
+    - any-glob-to-any-file: '.github/**'
