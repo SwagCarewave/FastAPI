@@ -4,7 +4,6 @@ import json
 import csv
 import os
 from datetime import datetime, timezone, timedelta
-from fastapi import WebSocket
 
 KST = timezone(timedelta(hours=9))
 
@@ -39,13 +38,13 @@ def save_row(row: dict):
 
 class RuViewManager:
     def __init__(self):
-        self.clients: list[WebSocket] = []
+        self.clients = []
 
-    async def connect_client(self, websocket: WebSocket):
+    async def connect_client(self, websocket):
         await websocket.accept()
         self.clients.append(websocket)
 
-    def disconnect_client(self, websocket: WebSocket):
+    def disconnect_client(self, websocket):
         self.clients.remove(websocket)
 
     async def broadcast(self, data: dict):
@@ -92,7 +91,6 @@ class RuViewManager:
                         if count % 50 == 0:
                             print(f"[{count}프레임] variance={row['variance']:.2f} presence={row['presence']}")
 
-                        # React로 실시간 브로드캐스트
                         await self.broadcast(row)
 
             except Exception as e:
@@ -101,3 +99,6 @@ class RuViewManager:
 
 
 ruview_manager = RuViewManager()
+
+if __name__ == "__main__":
+    asyncio.run(ruview_manager.connect_ruview())
