@@ -3,8 +3,10 @@ import websockets
 import json
 import csv
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from fastapi import WebSocket
+
+KST = timezone(timedelta(hours=9))
 
 RUVIEW_WS_URL = "ws://43.201.215.82:3001/ws/sensing"
 CSV_PATH = "csi_data.csv"
@@ -74,7 +76,7 @@ class RuViewManager:
                         classification = node.get("classification", {})
 
                         row = {
-                            "timestamp": datetime.now().timestamp(),
+                            "timestamp": datetime.now(KST).isoformat(),
                             "variance": features.get("variance", 0),
                             "motion_band_power": features.get("motion_band_power", 0),
                             "breathing_band_power": features.get("breathing_band_power", 0),
