@@ -5,8 +5,9 @@ from fastapi import WebSocket
 
 KST = timezone(timedelta(hours=9))
 
-EMA_ALPHA = 0.15        # 낮을수록 더 smooth (0.1~0.2 권장)
-PRESENCE_WINDOW = 20    # 최근 20프레임 과반수로 재실 판정
+EMA_ALPHA = 0.05        # 낮을수록 더 smooth
+PRESENCE_WINDOW = 30    # 최근 30프레임
+PRESENCE_THRESHOLD = 0.7  # 70% 이상이 true여야 재실
 
 
 class AppState:
@@ -14,6 +15,7 @@ class AppState:
         self.latest_data: Optional[dict] = None
         self.heart_rate: Optional[float] = None
         self.presence_changed_at: Optional[datetime] = None
+        self.detected_at: Optional[str] = None
         self.smoothed_freq: float = 0.0
         self.stable_presence: bool = False
         self.hardware_connected: bool = False
@@ -35,13 +37,17 @@ class AppState:
             self._freq_ema = EMA_ALPHA * raw_freq + (1 - EMA_ALPHA) * self._freq_ema
         self.smoothed_freq = self._freq_ema
 
-        # presence debounce (과반수 판정)
+        # presence debounce (70% 임계값)
         self._presence_buffer.append(bool(row.get("presence", False)))
-        stable = sum(self._presence_buffer) > len(self._presence_buffer) / 2
+        ratio = sum(self._presence_buffer) / len(self._presence_buffer)
+        stable = ratio > PRESENCE_THRESHOLD
         if stable != self._last_presence:
             self.presence_changed_at = datetime.now(KST)
             self._last_presence = stable
         self.stable_presence = stable
+
+        # detected_at = 가장 최근 데이터 수신 시각 (항상 현재 시간으로 갱신)
+        self.detected_at = row["timestamp"]
 
         self.latest_data = row
         self.heart_rate = heart_rate
