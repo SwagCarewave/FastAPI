@@ -5,9 +5,13 @@ from fastapi import WebSocket
 
 KST = timezone(timedelta(hours=9))
 
-EMA_ALPHA = 0.05        # 낮을수록 더 smooth
-PRESENCE_WINDOW = 30    # 최근 30프레임
-PRESENCE_THRESHOLD = 0.7  # 70% 이상이 true여야 재실
+EMA_ALPHA = 0.05
+PRESENCE_WINDOW = 30
+PRESENCE_THRESHOLD = 0.7
+
+# 실제 호흡 주파수 범위 (Hz) — 이 범위 밖은 노이즈로 간주
+BREATHING_FREQ_MIN = 0.1   # 6 bpm
+BREATHING_FREQ_MAX = 0.6   # 36 bpm
 
 
 class AppState:
@@ -29,16 +33,21 @@ class AppState:
         self.presence_clients: list[WebSocket] = []
 
     def update(self, row: dict, heart_rate: Optional[float] = None):
-        # EMA 스무딩
         raw_freq = row.get("dominant_freq_hz", 0)
+
+        # EMA 스무딩
         if self._freq_ema is None:
             self._freq_ema = raw_freq
         else:
             self._freq_ema = EMA_ALPHA * raw_freq + (1 - EMA_ALPHA) * self._freq_ema
         self.smoothed_freq = self._freq_ema
 
+        # 실제 재실 = RuView presence AND 주파수가 호흡 범위 안
+        freq_in_range = BREATHING_FREQ_MIN <= raw_freq <= BREATHING_FREQ_MAX
+        effective_presence = bool(row.get("presence", False)) and freq_in_range
+
         # presence debounce (70% 임계값)
-        self._presence_buffer.append(bool(row.get("presence", False)))
+        self._presence_buffer.append(effective_presence)
         ratio = sum(self._presence_buffer) / len(self._presence_buffer)
         stable = ratio > PRESENCE_THRESHOLD
         if stable != self._last_presence:
