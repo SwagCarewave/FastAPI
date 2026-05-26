@@ -2,7 +2,7 @@ import asyncio
 import httpx
 from app.ruview.state import state
 
-RUVIEW_STATUS_URL = "http://localhost:3000/api/v1/status"
+RUVIEW_STATUS_URL = "http://43.201.215.82:3000/api/v1/status"
 POLL_INTERVAL = 10
 
 
