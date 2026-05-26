@@ -12,6 +12,8 @@ class AppState:
         self.presence_changed_at: Optional[datetime] = None
         self._last_presence: Optional[bool] = None
         self.clients: list[WebSocket] = []
+        self.breathing_clients: list[WebSocket] = []
+        self.presence_clients: list[WebSocket] = []
 
     def update(self, row: dict, heart_rate: Optional[float] = None):
         presence = row.get("presence")
@@ -21,12 +23,21 @@ class AppState:
         self.latest_data = row
         self.heart_rate = heart_rate
 
-    async def broadcast(self, data: dict):
-        for client in self.clients.copy():
+    async def _send_all(self, clients: list[WebSocket], data: dict):
+        for client in clients.copy():
             try:
                 await client.send_json(data)
             except Exception:
-                self.clients.remove(client)
+                clients.remove(client)
+
+    async def broadcast(self, data: dict):
+        await self._send_all(self.clients, data)
+
+    async def broadcast_breathing(self, data: dict):
+        await self._send_all(self.breathing_clients, data)
+
+    async def broadcast_presence(self, data: dict):
+        await self._send_all(self.presence_clients, data)
 
 
 state = AppState()

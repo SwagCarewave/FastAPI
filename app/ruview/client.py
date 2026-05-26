@@ -80,6 +80,18 @@ async def ruview_listener():
 
                     await state.broadcast(row)
 
+                    await state.broadcast_breathing({
+                        "breathing_rate": round(row["dominant_freq_hz"] * 60),
+                        "heart_rate": heart_rate,
+                        "timestamp": row["timestamp"],
+                    })
+
+                    await state.broadcast_presence({
+                        "is_present": row["presence"],
+                        "status": "재실" if row["presence"] else "공실",
+                        "detected_at": state.presence_changed_at.isoformat() if state.presence_changed_at else None,
+                    })
+
         except Exception as e:
             print(f"RuView 연결 끊김: {e}. 3초 후 재연결...")
             await asyncio.sleep(3)
