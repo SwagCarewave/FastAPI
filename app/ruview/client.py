@@ -83,15 +83,15 @@ async def ruview_listener():
                     await state.broadcast({**row, "hardware_connected": hw})
 
                     await state.broadcast_breathing({
-                        "breathing_rate": round(row["dominant_freq_hz"] * 60),
+                        "breathing_rate": round(state.smoothed_freq * 60),
                         "heart_rate": heart_rate,
                         "timestamp": row["timestamp"],
                         "hardware_connected": hw,
                     })
 
                     await state.broadcast_presence({
-                        "is_present": row["presence"],
-                        "status": "재실" if row["presence"] else "공실",
+                        "is_present": state.stable_presence,
+                        "status": "재실" if state.stable_presence else "공실",
                         "detected_at": state.presence_changed_at.isoformat() if state.presence_changed_at else None,
                         "hardware_connected": hw,
                     })
