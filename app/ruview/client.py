@@ -53,11 +53,10 @@ async def ruview_listener():
                         continue
 
                     if count == 1:
-                        import json
-                        print("[RAW 구조]", json.dumps(list(data.keys())))
-                        print("[node_features[0] 키]", json.dumps(list(node_features[0].keys())))
-                        print("[features 키]", json.dumps(list(node_features[0].get("features", {}).keys())))
-                        print("[classification 키]", json.dumps(list(node_features[0].get("classification", {}).keys())))
+                        print("[RAW 구조]", list(data.keys()))
+                        print("[node_features[0] 키]", list(node_features[0].keys()))
+                        print("[features 키]", list(node_features[0].get("features", {}).keys()))
+                        print("[classification 키]", list(node_features[0].get("classification", {}).keys()))
 
                     node = node_features[0]
                     features = node.get("features", {})
