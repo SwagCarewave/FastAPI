@@ -42,12 +42,8 @@ class AppState:
             self._freq_ema = EMA_ALPHA * raw_freq + (1 - EMA_ALPHA) * self._freq_ema
         self.smoothed_freq = self._freq_ema
 
-        # 실제 재실 = RuView presence AND 주파수가 호흡 범위 안
-        freq_in_range = BREATHING_FREQ_MIN <= raw_freq <= BREATHING_FREQ_MAX
-        effective_presence = bool(row.get("presence", False)) and freq_in_range
-
-        # presence debounce (70% 임계값)
-        self._presence_buffer.append(effective_presence)
+        # presence debounce — RuView 값 그대로 사용
+        self._presence_buffer.append(bool(row.get("presence", False)))
         ratio = sum(self._presence_buffer) / len(self._presence_buffer)
         stable = ratio > PRESENCE_THRESHOLD
         if stable != self._last_presence:

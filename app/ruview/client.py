@@ -52,6 +52,9 @@ async def ruview_listener():
                     if not node_features:
                         continue
 
+                    if count == 1:
+                        print(f"[노드 수] node_features 길이: {len(node_features)}")
+
                     node = node_features[0]
                     features = node.get("features", {})
                     classification = node.get("classification", {})
@@ -82,7 +85,8 @@ async def ruview_listener():
 
                     await state.broadcast({**row, "hardware_connected": hw})
 
-                    breathing_rate = round(state.smoothed_freq * 60) if state.stable_presence else None
+                    freq_valid = 0.1 <= state.smoothed_freq <= 0.6
+                    breathing_rate = round(state.smoothed_freq * 60) if (state.stable_presence and freq_valid) else None
                     hr = heart_rate if state.stable_presence else None
 
                     await state.broadcast_breathing({
