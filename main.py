@@ -1,7 +1,9 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
-from app.ruview.websocket_client import ruview_manager
+from app.ruview.client import ruview_listener
+from app.ruview.state import state
+from app.api.routes import router
 
 app = FastAPI()
 
@@ -13,10 +15,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(router)
+
 
 @app.on_event("startup")
 async def startup():
-    asyncio.create_task(ruview_manager.connect_ruview())
+    asyncio.create_task(ruview_listener())
 
 
 @app.get("/")
@@ -26,9 +30,10 @@ def root():
 
 @app.websocket("/ws/carewave")
 async def carewave_ws(websocket: WebSocket):
-    await ruview_manager.connect_client(websocket)
+    await websocket.accept()
+    state.clients.append(websocket)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        ruview_manager.disconnect_client(websocket)
+        state.clients.remove(websocket)
