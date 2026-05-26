@@ -78,18 +78,22 @@ async def ruview_listener():
                     if count % 50 == 0:
                         print(f"[{count}프레임] variance={row['variance']:.2f} presence={row['presence']}")
 
-                    await state.broadcast(row)
+                    hw = state.hardware_connected
+
+                    await state.broadcast({**row, "hardware_connected": hw})
 
                     await state.broadcast_breathing({
                         "breathing_rate": round(row["dominant_freq_hz"] * 60),
                         "heart_rate": heart_rate,
                         "timestamp": row["timestamp"],
+                        "hardware_connected": hw,
                     })
 
                     await state.broadcast_presence({
                         "is_present": row["presence"],
                         "status": "재실" if row["presence"] else "공실",
                         "detected_at": state.presence_changed_at.isoformat() if state.presence_changed_at else None,
+                        "hardware_connected": hw,
                     })
 
         except Exception as e:

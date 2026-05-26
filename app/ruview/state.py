@@ -11,6 +11,7 @@ class AppState:
         self.heart_rate: Optional[float] = None
         self.presence_changed_at: Optional[datetime] = None
         self._last_presence: Optional[bool] = None
+        self.hardware_connected: bool = False
         self.clients: list[WebSocket] = []
         self.breathing_clients: list[WebSocket] = []
         self.presence_clients: list[WebSocket] = []
