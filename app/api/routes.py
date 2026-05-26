@@ -4,6 +4,11 @@ from app.ruview.state import state
 router = APIRouter(prefix="/api")
 
 
+@router.get("/status")
+async def get_status():
+    return {"hardware_connected": state.hardware_connected}
+
+
 @router.get("/breathing")
 async def get_breathing():
     if state.latest_data is None:
