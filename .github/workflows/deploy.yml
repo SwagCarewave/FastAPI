@@ -15,7 +15,7 @@ jobs:
           cd ~/FastAPI
           git pull origin main
           docker build -t carewave-fastapi .
-          docker stop $(docker ps -q --filter "publish=8000") || true
-          sleep 1
-          docker run -d -p 8000:8000 --restart unless-stopped carewave-fastapi
+          docker stop carewave-container || true
+          docker rm carewave-container || true
+          docker run -d --name carewave-container -p 8000:8000 -p 5005:5005/udp --restart unless-stopped carewave-fastapi
           docker image prune -f
