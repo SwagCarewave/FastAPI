@@ -1,8 +1,7 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
-from app.ruview.client import ruview_listener
-from app.ruview.status import status_checker
+from app.ruview.udp_receiver import udp_receiver
 from app.ruview.state import state
 from app.api.routes import router
 
@@ -21,8 +20,7 @@ app.include_router(router)
 
 @app.on_event("startup")
 async def startup():
-    asyncio.create_task(ruview_listener())
-    asyncio.create_task(status_checker())
+    asyncio.create_task(udp_receiver())
 
 
 @app.get("/")
