@@ -19,8 +19,8 @@ async def udp_receiver():
         try:
             data, addr = await loop.sock_recvfrom(sock, 65535)
             raw_str = data.decode("utf-8", errors="ignore")
-            print(f"\n[UDP] FROM: {addr}")
-            print(raw_str[:300])
+            print(f"\n[UDP] FROM: {addr}", flush=True)
+            print(raw_str[:300], flush=True)
         except Exception as e:
             print(f"[UDP] Error: {e}")
             await asyncio.sleep(1)
