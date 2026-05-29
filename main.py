@@ -28,17 +28,6 @@ def root():
     return {"message": "CareWave FastAPI Server"}
 
 
-@app.websocket("/ws/carewave")
-async def carewave_ws(websocket: WebSocket):
-    await websocket.accept()
-    state.clients.append(websocket)
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        state.clients.remove(websocket)
-
-
 @app.websocket("/ws/presence")
 async def presence_ws(websocket: WebSocket):
     await websocket.accept()
@@ -48,3 +37,14 @@ async def presence_ws(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         state.presence_clients.remove(websocket)
+
+
+@app.websocket("/ws/fall")
+async def fall_ws(websocket: WebSocket):
+    await websocket.accept()
+    state.fall_clients.append(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        state.fall_clients.remove(websocket)

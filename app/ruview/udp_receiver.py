@@ -38,7 +38,6 @@ async def send_fall_event(occurred_at: str):
 
     payload = {
         "event_type": "낙상 감지",
-        "room": ROOM,
         "occurred_at": occurred_at,
         "status": "미확인",
     }
@@ -96,25 +95,22 @@ async def udp_receiver(label: str = "???", csv_writer=None):
                 "status": "재실" if state.stable_presence else "공실",
                 "detected_at": timestamp,
             }
+            await state.broadcast_presence(presence_data)
 
-            # 낙상 감지 이벤트
+            # 낙상 감지 이벤트 — 별도 채널로 분리
             if status == "움직임감지" and _fall_cooldown_ok():
                 state.last_fall_event_at = datetime.now(KST)
                 state.set_fall_lock(30)
 
-                event_data = {
+                fall_data = {
                     "event_type": "낙상 감지",
-                    "room": ROOM,
                     "occurred_at": timestamp,
                     "status": "미확인",
                 }
-                presence_data["event"] = event_data
                 print(f"[EVENT] 낙상 감지 — {timestamp}", flush=True)
 
                 asyncio.create_task(send_fall_event(timestamp))
-
-            await state.broadcast_presence(presence_data)
-            await state.broadcast(presence_data)
+                await state.broadcast_fall(fall_data)
 
         except Exception as e:
             print(f"[UDP] Error: {e}", flush=True)
