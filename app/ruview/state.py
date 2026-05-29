@@ -32,6 +32,18 @@ class AppState:
         self.breathing_clients: list[WebSocket] = []
         self.presence_clients: list[WebSocket] = []
 
+    def update_from_csi(self, is_present: bool, timestamp: str):
+        self._presence_buffer.append(is_present)
+        ratio = sum(self._presence_buffer) / len(self._presence_buffer)
+        stable = ratio > PRESENCE_THRESHOLD
+        if stable != self._last_presence:
+            self.presence_changed_at = datetime.now(KST)
+            self._last_presence = stable
+        self.stable_presence = stable
+        self.detected_at = timestamp
+        self.latest_data = {"timestamp": timestamp}
+        self.hardware_connected = True
+
     def update(self, row: dict, heart_rate: Optional[float] = None):
         raw_freq = row.get("dominant_freq_hz", 0)
 
