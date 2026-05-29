@@ -32,20 +32,12 @@ async def udp_receiver():
             if parsed is None:
                 continue
 
-            is_present, avg_var = detector.update(parsed["amplitudes"])
+            _, avg_var = detector.update(parsed["amplitudes"])
             timestamp = datetime.now(KST).isoformat()
 
-            state.update_from_csi(is_present, timestamp)
-
-            presence_data = {
-                "is_present": state.stable_presence,
-                "status": "재실" if state.stable_presence else "공실",
-                "detected_at": timestamp,
-            }
-            print(f"[PRESENCE] {presence_data['status']} | avg_var={avg_var:.4f} | rssi={parsed['rssi']}", flush=True)
-
-            await state.broadcast_presence(presence_data)
-            await state.broadcast(presence_data)
+            # 데이터 수집 중: 판단 없이 avg_var만 출력
+            # 공실/재실 각 상황에서 이 값 범위를 확인한 뒤 threshold 설정
+            print(f"[DATA] avg_var={avg_var:.4f} | rssi={parsed['rssi']} | label=???", flush=True)
 
         except Exception as e:
             print(f"[UDP] Error: {e}", flush=True)
