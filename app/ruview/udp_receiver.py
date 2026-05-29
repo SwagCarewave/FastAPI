@@ -20,7 +20,10 @@ KST = timezone(timedelta(hours=9))
 
 SPRINGBOOT_URL = os.getenv("SPRINGBOOT_URL", "")
 ROOM = os.getenv("ROOM", "101호")
-FALL_COOLDOWN_SEC = 60  # 낙상 이벤트 최소 간격 (스팸 방지)
+FALL_COOLDOWN_SEC = 60
+FALL_CONFIRM_FRAMES = 2  # 연속 N프레임 이상 조건 충족해야 낙상으로 판단
+
+_fall_candidate_count = 0
 
 
 def judge(avg_var: float, window_std: float, frame_diff: float) -> tuple[bool, str]:
@@ -97,8 +100,15 @@ async def udp_receiver(label: str = "???", csv_writer=None):
             }
             await state.broadcast_presence(presence_data)
 
-            # 낙상 감지 이벤트 — 별도 채널로 분리
-            if status == "움직임감지" and _fall_cooldown_ok():
+            # 낙상 감지 이벤트 — 연속 프레임 확인 후 판단
+            global _fall_candidate_count
+            if status == "움직임감지":
+                _fall_candidate_count += 1
+            else:
+                _fall_candidate_count = 0
+
+            if _fall_candidate_count >= FALL_CONFIRM_FRAMES and _fall_cooldown_ok():
+                _fall_candidate_count = 0
                 state.last_fall_event_at = datetime.now(KST)
                 state.set_fall_lock(30)
 
