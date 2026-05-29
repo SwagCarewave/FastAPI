@@ -5,14 +5,20 @@ import socket
 from datetime import datetime, timezone, timedelta
 
 from app.ruview.csi_parser import parse_csi
-from app.ruview.presence_detector import detector
+from app.ruview.presence_detector import detector, AVG_VAR_THRESHOLD, WINDOW_STD_THRESHOLD, FRAME_DIFF_THRESHOLD
 from app.ruview.state import state
 
 UDP_IP = "0.0.0.0"
 UDP_PORT = 5005
 KST = timezone(timedelta(hours=9))
 
-RSSI_THRESHOLD = -60  # rssi >= -60 → 재실, < -60 → 공실
+
+def judge(avg_var: float, window_std: float, frame_diff: float) -> tuple[bool, str]:
+    if avg_var >= AVG_VAR_THRESHOLD:
+        return False, "공실"
+    if window_std >= WINDOW_STD_THRESHOLD or frame_diff >= FRAME_DIFF_THRESHOLD:
+        return True, "움직임감지"
+    return True, "재실"
 
 
 async def udp_receiver(label: str = "???", csv_writer=None):
@@ -34,20 +40,19 @@ async def udp_receiver(label: str = "???", csv_writer=None):
             if parsed is None:
                 continue
 
-            _, avg_var, window_std = detector.update(parsed["amplitudes"])
+            _, avg_var, window_std, frame_diff = detector.update(parsed["amplitudes"])
             rssi = parsed["rssi"]
             timestamp = datetime.now(KST).isoformat()
 
-            is_present = rssi >= RSSI_THRESHOLD
-            status = "재실" if is_present else "공실"
+            is_present, status = judge(avg_var, window_std, frame_diff)
 
             print(
-                f"[PRESENCE] {status} | avg_var={avg_var:.2f} | window_std={window_std:.2f} | rssi={rssi}",
+                f"[PRESENCE] {status} | avg_var={avg_var:.2f} | window_std={window_std:.2f} | frame_diff={frame_diff:.3f} | rssi={rssi}",
                 flush=True,
             )
 
             if csv_writer is not None:
-                csv_writer.writerow([timestamp, avg_var, window_std, rssi, label])
+                csv_writer.writerow([timestamp, avg_var, window_std, frame_diff, rssi, label])
 
             state.update_from_csi(is_present, timestamp)
 
@@ -74,7 +79,7 @@ if __name__ == "__main__":
     writer = csv.writer(csv_file)
 
     if csv_file.tell() == 0:
-        writer.writerow(["timestamp", "avg_var", "window_std", "rssi", "label"])
+        writer.writerow(["timestamp", "avg_var", "window_std", "frame_diff", "rssi", "label"])
 
     print(f"[CSV] 저장 중: {csv_path}", flush=True)
 
