@@ -27,12 +27,25 @@ class AppState:
         self._last_presence: Optional[bool] = None
         self._freq_ema: Optional[float] = None
         self._presence_buffer: deque = deque(maxlen=PRESENCE_WINDOW)
+        self._fall_locked_until: Optional[datetime] = None
 
         self.clients: list[WebSocket] = []
         self.breathing_clients: list[WebSocket] = []
         self.presence_clients: list[WebSocket] = []
 
+    def set_fall_lock(self, duration_sec: int = 30):
+        self._fall_locked_until = datetime.now(KST) + timedelta(seconds=duration_sec)
+
+    def _is_fall_locked(self) -> bool:
+        if self._fall_locked_until is None:
+            return False
+        return datetime.now(KST) < self._fall_locked_until
+
     def update_from_csi(self, is_present: bool, timestamp: str):
+        # 낙상 이벤트 이후 일정 시간은 재실 강제 유지
+        if self._is_fall_locked():
+            is_present = True
+
         self._presence_buffer.append(is_present)
         ratio = sum(self._presence_buffer) / len(self._presence_buffer)
         stable = ratio > PRESENCE_THRESHOLD
