@@ -26,7 +26,7 @@ FALL_COOLDOWN_SEC = 60  # 낙상 이벤트 최소 간격 (스팸 방지)
 def judge(avg_var: float, window_std: float, frame_diff: float) -> tuple[bool, str]:
     if avg_var >= AVG_VAR_THRESHOLD:
         return False, "공실"
-    if window_std >= WINDOW_STD_THRESHOLD or frame_diff >= FRAME_DIFF_THRESHOLD:
+    if window_std >= WINDOW_STD_THRESHOLD and frame_diff >= FRAME_DIFF_THRESHOLD:
         return True, "움직임감지"
     return True, "재실"
 
