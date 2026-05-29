@@ -1,16 +1,26 @@
 import argparse
 import asyncio
 import csv
+import os
 import socket
 from datetime import datetime, timezone, timedelta
+
+import httpx
+from dotenv import load_dotenv
 
 from app.ruview.csi_parser import parse_csi
 from app.ruview.presence_detector import detector, AVG_VAR_THRESHOLD, WINDOW_STD_THRESHOLD, FRAME_DIFF_THRESHOLD
 from app.ruview.state import state
 
+load_dotenv()
+
 UDP_IP = "0.0.0.0"
 UDP_PORT = 5005
 KST = timezone(timedelta(hours=9))
+
+SPRINGBOOT_URL = os.getenv("SPRINGBOOT_URL", "")
+ROOM = os.getenv("ROOM", "101호")
+FALL_COOLDOWN_SEC = 60  # 낙상 이벤트 최소 간격 (스팸 방지)
 
 
 def judge(avg_var: float, window_std: float, frame_diff: float) -> tuple[bool, str]:
@@ -19,6 +29,32 @@ def judge(avg_var: float, window_std: float, frame_diff: float) -> tuple[bool, s
     if window_std >= WINDOW_STD_THRESHOLD or frame_diff >= FRAME_DIFF_THRESHOLD:
         return True, "움직임감지"
     return True, "재실"
+
+
+async def send_fall_event(occurred_at: str):
+    if not SPRINGBOOT_URL:
+        print("[EVENT] SPRINGBOOT_URL 미설정 — Spring Boot 전송 생략", flush=True)
+        return
+
+    payload = {
+        "event_type": "낙상 감지",
+        "room": ROOM,
+        "occurred_at": occurred_at,
+        "status": "미확인",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(f"{SPRINGBOOT_URL}/api/events", json=payload)
+            print(f"[EVENT] Spring Boot 전송 완료 ({resp.status_code})", flush=True)
+    except Exception as e:
+        print(f"[EVENT] Spring Boot 전송 실패: {e}", flush=True)
+
+
+def _fall_cooldown_ok() -> bool:
+    if state.last_fall_event_at is None:
+        return True
+    elapsed = (datetime.now(KST) - state.last_fall_event_at).total_seconds()
+    return elapsed >= FALL_COOLDOWN_SEC
 
 
 async def udp_receiver(label: str = "???", csv_writer=None):
@@ -57,10 +93,26 @@ async def udp_receiver(label: str = "???", csv_writer=None):
             state.update_from_csi(is_present, timestamp)
 
             presence_data = {
-                "is_present": state.stable_presence,
                 "status": "재실" if state.stable_presence else "공실",
                 "detected_at": timestamp,
             }
+
+            # 낙상 감지 이벤트
+            if status == "움직임감지" and _fall_cooldown_ok():
+                state.last_fall_event_at = datetime.now(KST)
+                state.set_fall_lock(30)
+
+                event_data = {
+                    "event_type": "낙상 감지",
+                    "room": ROOM,
+                    "occurred_at": timestamp,
+                    "status": "미확인",
+                }
+                presence_data["event"] = event_data
+                print(f"[EVENT] 낙상 감지 — {timestamp}", flush=True)
+
+                asyncio.create_task(send_fall_event(timestamp))
+
             await state.broadcast_presence(presence_data)
             await state.broadcast(presence_data)
 

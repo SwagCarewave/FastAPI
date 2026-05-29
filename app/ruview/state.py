@@ -28,6 +28,7 @@ class AppState:
         self._freq_ema: Optional[float] = None
         self._presence_buffer: deque = deque(maxlen=PRESENCE_WINDOW)
         self._fall_locked_until: Optional[datetime] = None
+        self.last_fall_event_at: Optional[datetime] = None
 
         self.clients: list[WebSocket] = []
         self.breathing_clients: list[WebSocket] = []

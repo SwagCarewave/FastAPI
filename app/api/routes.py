@@ -12,8 +12,6 @@ async def get_status():
 @router.get("/presence")
 async def get_presence():
     return {
-        "is_present": state.stable_presence,
         "status": "재실" if state.stable_presence else "공실",
         "detected_at": state.detected_at,
-        "hardware_connected": state.hardware_connected,
     }
