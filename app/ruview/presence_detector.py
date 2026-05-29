@@ -4,8 +4,8 @@ import statistics
 
 WINDOW_SIZE = 30
 
-AVG_VAR_THRESHOLD = 22.0   # >= 22 → 공실, < 22 → 재실
-WINDOW_STD_THRESHOLD = 2.0
+AVG_VAR_THRESHOLD = 21.0   # < 21 → 공실, >= 21 → 재실
+WINDOW_STD_THRESHOLD = 3.0
 FRAME_DIFF_THRESHOLD = 2.0
 
 
