@@ -5,8 +5,8 @@ import statistics
 WINDOW_SIZE = 30
 
 AVG_VAR_THRESHOLD = 22.0   # >= 22 → 공실, < 22 → 재실
-WINDOW_STD_THRESHOLD = 1.5
-FRAME_DIFF_THRESHOLD = 0.75
+WINDOW_STD_THRESHOLD = 2.0
+FRAME_DIFF_THRESHOLD = 2.0
 
 
 class PresenceDetector:
