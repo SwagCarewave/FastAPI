@@ -21,7 +21,8 @@ KST     = timezone(timedelta(hours=9))
 SPRINGBOOT_URL     = os.getenv("SPRINGBOOT_URL", "")
 ROOM               = os.getenv("ROOM", "101호")
 FALL_COOLDOWN_SEC  = 60
-FALL_CONFIRM_FRAMES = 2
+FALL_CONFIRM_FRAMES  = 2
+CONFIDENCE_THRESHOLD = 0.80  # 이 미만이면 이전 상태 유지
 
 _fall_candidate_count = 0
 
@@ -116,7 +117,15 @@ async def udp_receiver():
             buf["frames"] = buf["frames"][WINDOW_SIZE:]
             buf["rssi"]   = buf["rssi"][WINDOW_SIZE:]
 
-            ant_predictions[rx] = is_occupied
+            # confidence 낮으면 이전 상태 유지 (오탐 방지)
+            if confidence < CONFIDENCE_THRESHOLD:
+                is_occupied = ant_predictions.get(rx, is_occupied)
+                print(
+                    f"[ML] {rx} → 낮은 신뢰도({confidence:.2f}) — 이전 상태 유지",
+                    flush=True,
+                )
+            else:
+                ant_predictions[rx] = is_occupied
 
             # 수신된 안테나 다수결 집계
             votes        = list(ant_predictions.values())
