@@ -21,8 +21,9 @@ KST     = timezone(timedelta(hours=9))
 SPRINGBOOT_URL     = os.getenv("SPRINGBOOT_URL", "")
 ROOM               = os.getenv("ROOM", "101호")
 FALL_COOLDOWN_SEC  = 60
-FALL_CONFIRM_FRAMES  = 2
-CONFIDENCE_THRESHOLD = 0.80  # 이 미만이면 이전 상태 유지
+FALL_CONFIRM_FRAMES    = 2
+CONFIDENCE_THRESHOLD   = 0.80  # 재실 판정 최소 신뢰도
+UNOCCUPIED_CONFIRM     = 3     # 공실 전환에 필요한 연속 예측 횟수
 
 _fall_candidate_count = 0
 
@@ -66,6 +67,9 @@ async def udp_receiver():
 
     # 안테나별 최신 예측 결과 (다수결 집계용)
     ant_predictions: dict[str, bool] = {}
+
+    # 재실→공실 전환용 연속 공실 카운터
+    ant_unoccupied_streak: dict[str, int] = defaultdict(int)
 
     global _fall_candidate_count
 
@@ -117,15 +121,22 @@ async def udp_receiver():
             buf["frames"] = buf["frames"][WINDOW_SIZE:]
             buf["rssi"]   = buf["rssi"][WINDOW_SIZE:]
 
-            # confidence 낮으면 이전 상태 유지 (오탐 방지)
-            if confidence < CONFIDENCE_THRESHOLD:
-                is_occupied = ant_predictions.get(rx, is_occupied)
-                print(
-                    f"[ML] {rx} → 낮은 신뢰도({confidence:.2f}) — 이전 상태 유지",
-                    flush=True,
-                )
+            if is_occupied:
+                # 재실 예측: 신뢰도 0.80 이상이면 즉시 재실 전환
+                if confidence >= CONFIDENCE_THRESHOLD:
+                    ant_predictions[rx] = True
+                    ant_unoccupied_streak[rx] = 0
+                else:
+                    is_occupied = ant_predictions.get(rx, True)
+                    print(f"[ML] {rx} → 낮은 신뢰도({confidence:.2f}) 재실 — 이전 상태 유지", flush=True)
             else:
-                ant_predictions[rx] = is_occupied
+                # 공실 예측: 연속 N번 나와야 공실 전환 (신뢰도 무관)
+                ant_unoccupied_streak[rx] += 1
+                if ant_unoccupied_streak[rx] >= UNOCCUPIED_CONFIRM:
+                    ant_predictions[rx] = False
+                else:
+                    is_occupied = ant_predictions.get(rx, False)
+                    print(f"[ML] {rx} → 공실 예측 {ant_unoccupied_streak[rx]}/{UNOCCUPIED_CONFIRM}번째", flush=True)
 
             # 수신된 안테나 다수결 집계
             votes        = list(ant_predictions.values())
