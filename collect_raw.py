@@ -8,13 +8,14 @@ Usage:
 
 Output: csi_features_<label>.csv
     label, rx, start,
-    rssi_mean, rssi_std,
-    amp_mean, amp_std_time,
+    rssi_mean, rssi_std, amp_mean, amp_std_time,
     subcarrier_var_mean, subcarrier_std_mean,
     temporal_diff_mean_abs, temporal_diff_std,
     window_var, spectral_total_power,
-    low_band_ratio, mid_band_ratio,
-    dominant_freq_idx, corr_mean_abs
+    low_band_ratio, mid_band_ratio, dominant_freq_idx, corr_mean_abs,
+    spectral_entropy, peak_to_peak, skewness, kurtosis
+
+  rx="RX1-RX2" 행: 두 안테나 특징값의 절댓값 차이
 """
 
 import argparse
@@ -23,6 +24,7 @@ import csv
 import math
 import re
 import socket
+from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
 import numpy as np
@@ -31,18 +33,13 @@ UDP_IP = "0.0.0.0"
 UDP_PORT = 5005
 KST = timezone(timedelta(hours=9))
 
-# Window settings
-WINDOW_SIZE = 100   # frames per feature window (non-overlapping)
-FFT_N = 128         # zero-pad size for FFT (power-of-2)
+WINDOW_SIZE = 100
+FFT_N = 128
 
-# Hampel filter
 HAMPEL_HALF_WIN = 5
 HAMPEL_SIGMA = 3.0
-
-# Moving average
 MA_WIN = 5
 
-# FFT band definitions (normalized frequency 0–0.5)
 LOW_CUTOFF = 0.1
 MID_CUTOFF = 0.4
 
@@ -55,13 +52,20 @@ CSV_HEADER = [
     "window_var", "spectral_total_power",
     "low_band_ratio", "mid_band_ratio",
     "dominant_freq_idx", "corr_mean_abs",
+    "spectral_entropy",
+    "peak_to_peak",
+    "skewness",
+    "kurtosis",
 ]
 
+# 수치 특징이 시작되는 열 인덱스 (label, rx, start 제외)
+_FEAT_START = 3
 
-# ── Parsing ─────────────────────────────────────────────────────────────────
+
+# ── Parsing ──────────────────────────────────────────────────────────────────
 
 def parse_csi(raw: str) -> dict | None:
-    """Parse ESP32 CSI UDP packet → amplitudes + RSSI."""
+    """ESP32 CSI UDP 패킷 → amplitudes + RSSI + 안테나 인덱스."""
     match = re.search(r'\[([^\]]+)\]', raw)
     if not match:
         return None
@@ -75,7 +79,7 @@ def parse_csi(raw: str) -> dict | None:
     amplitudes = []
     for i in range(0, len(nums) - 1, 2):
         amp = math.sqrt(nums[i] ** 2 + nums[i + 1] ** 2)
-        if amp > 1.0:  # guard / null subcarrier 제외
+        if amp > 1.0:
             amplitudes.append(amp)
 
     if not amplitudes:
@@ -87,13 +91,18 @@ def parse_csi(raw: str) -> dict | None:
     except (IndexError, ValueError):
         rssi = None
 
-    return {"amplitudes": amplitudes, "rssi": rssi}
+    # ESP32 CSI 포맷: ...,ant,... — ant 필드는 인덱스 19
+    try:
+        ant = int(parts[19])
+    except (IndexError, ValueError):
+        ant = 0
+
+    return {"amplitudes": amplitudes, "rssi": rssi, "ant": ant}
 
 
-# ── Preprocessing ────────────────────────────────────────────────────────────
+# ── Preprocessing ─────────────────────────────────────────────────────────────
 
 def hampel_filter(x: np.ndarray) -> np.ndarray:
-    """Hampel identifier: replace outliers with local median."""
     out = x.copy()
     n = len(x)
     for i in range(n):
@@ -101,7 +110,7 @@ def hampel_filter(x: np.ndarray) -> np.ndarray:
         hi = min(n, i + HAMPEL_HALF_WIN + 1)
         win = x[lo:hi]
         med = np.median(win)
-        mad = np.median(np.abs(win - med)) * 1.4826  # scaled MAD ≈ σ
+        mad = np.median(np.abs(win - med)) * 1.4826
         if mad > 0 and abs(x[i] - med) > HAMPEL_SIGMA * mad:
             out[i] = med
     return out
@@ -111,89 +120,88 @@ def moving_average(x: np.ndarray) -> np.ndarray:
     return np.convolve(x, np.ones(MA_WIN) / MA_WIN, mode='same')
 
 
-# ── Feature Extraction ───────────────────────────────────────────────────────
+# ── Feature Extraction ────────────────────────────────────────────────────────
 
-def extract_features(frames: list[list[float]], rssi_list: list[float], start: int, label: str) -> list:
-    """
-    frames : list of amplitude arrays per frame (length may vary)
-    rssi_list : RSSI per frame
-    start : frame index at window start
-    """
-    # Align subcarrier count across frames
+def extract_features(frames: list, rssi_list: list, start: int, label: str, rx: str) -> list:
     min_subs = min(len(f) for f in frames)
-    amp_matrix = np.array([f[:min_subs] for f in frames], dtype=float)  # (N, S)
+    amp_matrix = np.array([f[:min_subs] for f in frames], dtype=float)
     rssi_arr = np.array(rssi_list, dtype=float)
 
-    # ── Preprocessing ────────────────────────────────────────────────────────
-    # Hampel filter then moving average on each subcarrier time series
-    amp_filtered = np.apply_along_axis(hampel_filter, 0, amp_matrix)   # (N, S)
-    amp_smooth   = np.apply_along_axis(moving_average, 0, amp_filtered)  # (N, S)
+    amp_filtered = np.apply_along_axis(hampel_filter, 0, amp_matrix)
+    amp_smooth   = np.apply_along_axis(moving_average, 0, amp_filtered)
+    frame_means  = amp_smooth.mean(axis=1)
 
-    # Per-frame mean amplitude time series
-    frame_means = amp_smooth.mean(axis=1)  # (N,)
-
-    # ── RSSI features ─────────────────────────────────────────────────────────
+    # RSSI
     valid_rssi = rssi_arr[rssi_arr != 0]
     rssi_mean = float(np.mean(valid_rssi)) if len(valid_rssi) > 0 else 0.0
     rssi_std  = float(np.std(valid_rssi))  if len(valid_rssi) > 0 else 0.0
 
-    # ── Amplitude features ────────────────────────────────────────────────────
+    # Amplitude
     amp_mean     = float(np.mean(amp_smooth))
-    amp_std_time = float(np.std(frame_means))   # temporal variation of per-frame mean
+    amp_std_time = float(np.std(frame_means))
 
-    # ── Subcarrier spatial features ───────────────────────────────────────────
+    # Subcarrier spatial
     subcarrier_var_mean = float(np.mean(np.var(amp_smooth, axis=1)))
     subcarrier_std_mean = float(np.mean(np.std(amp_smooth, axis=1)))
 
-    # ── Temporal difference features ──────────────────────────────────────────
+    # Temporal diff
     diffs = np.diff(frame_means)
     temporal_diff_mean_abs = float(np.mean(np.abs(diffs)))
     temporal_diff_std      = float(np.std(diffs))
 
-    # ── Variance (window_var = amp_std_time²) ────────────────────────────────
-    signal    = frame_means - frame_means.mean()
+    # Window variance
+    signal     = frame_means - frame_means.mean()
     window_var = float(np.var(signal))
-
-    # spectral_total_power == window_var by Parseval's theorem (demeaned signal)
     spectral_total_power = window_var
 
-    # ── FFT spectral features ─────────────────────────────────────────────────
+    # FFT
     fft_vals  = np.fft.rfft(signal, n=FFT_N)
     fft_power = np.abs(fft_vals) ** 2
-    freqs     = np.fft.rfftfreq(FFT_N)  # normalized [0, 0.5]
+    freqs     = np.fft.rfftfreq(FFT_N)
 
     pos_mask  = freqs > 0
-    total_pos = float(np.sum(fft_power[pos_mask]))
-    if total_pos == 0:
-        total_pos = 1.0
+    total_pos = float(np.sum(fft_power[pos_mask])) or 1.0
 
-    low_mask = (freqs > 0) & (freqs <= LOW_CUTOFF)
-    mid_mask = (freqs > LOW_CUTOFF) & (freqs <= MID_CUTOFF)
+    low_band_ratio = float(np.sum(fft_power[(freqs > 0) & (freqs <= LOW_CUTOFF)])) / total_pos
+    mid_band_ratio = float(np.sum(fft_power[(freqs > LOW_CUTOFF) & (freqs <= MID_CUTOFF)])) / total_pos
 
-    low_band_ratio = float(np.sum(fft_power[low_mask])) / total_pos
-    mid_band_ratio = float(np.sum(fft_power[mid_mask])) / total_pos
-
-    dom_idx_in_pos   = int(np.argmax(fft_power[pos_mask]))
+    dom_idx_in_pos  = int(np.argmax(fft_power[pos_mask]))
     dominant_freq_idx = float(freqs[pos_mask][dom_idx_in_pos])
 
-    # ── PCA (SVD): dominant subcarrier direction for correlation analysis ──────
-    amp_centered = amp_smooth - amp_smooth.mean(axis=0)
+    # PCA (SVD) — 주성분 방향 추출, 향후 활용 가능
     try:
+        amp_centered = amp_smooth - amp_smooth.mean(axis=0)
         _, _, Vt = np.linalg.svd(amp_centered, full_matrices=False)
-        pc1_direction = Vt[0]  # principal subcarrier weights (unused in output but useful for future)
+        _pc1 = Vt[0]  # noqa: F841
     except np.linalg.LinAlgError:
-        pc1_direction = None  # noqa: F841 (kept for future use)
+        pass
 
-    # ── Subcarrier correlation ────────────────────────────────────────────────
+    # Subcarrier correlation
     if min_subs > 1:
-        corr_matrix  = np.corrcoef(amp_smooth.T)  # (S, S)
-        upper_mask   = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
-        corr_mean_abs = float(np.mean(np.abs(corr_matrix[upper_mask])))
+        corr_matrix = np.corrcoef(amp_smooth.T)
+        upper = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
+        corr_mean_abs = float(np.mean(np.abs(corr_matrix[upper])))
     else:
         corr_mean_abs = 0.0
 
+    # ── 추가 특징 ──────────────────────────────────────────────────────────────
+
+    # Spectral Entropy: 스펙트럼 분포의 불확실성 (사람 존재 시 증가)
+    prob = fft_power[pos_mask] / total_pos
+    spectral_entropy = float(-np.sum(prob * np.log2(prob + 1e-12)))
+
+    # Peak-to-Peak: 움직임 크기 직접 반영
+    peak_to_peak = float(np.max(frame_means) - np.min(frame_means))
+
+    # Skewness (왜도): 3차 표준화 모멘트
+    std = float(np.std(signal)) or 1e-10
+    skewness = float(np.mean(((signal - signal.mean()) / std) ** 3))
+
+    # Kurtosis (첨도): 4차 표준화 모멘트 — 3 (excess kurtosis)
+    kurtosis = float(np.mean(((signal - signal.mean()) / std) ** 4) - 3)
+
     return [
-        label, "RX1", start,
+        label, rx, start,
         rssi_mean, rssi_std,
         amp_mean, amp_std_time,
         subcarrier_var_mean, subcarrier_std_mean,
@@ -201,10 +209,20 @@ def extract_features(frames: list[list[float]], rssi_list: list[float], start: i
         window_var, spectral_total_power,
         low_band_ratio, mid_band_ratio,
         dominant_freq_idx, corr_mean_abs,
+        spectral_entropy, peak_to_peak, skewness, kurtosis,
     ]
 
 
-# ── Collection loop ──────────────────────────────────────────────────────────
+def diff_row(row_a: list, row_b: list) -> list:
+    """두 안테나 feature row의 절댓값 차이 행 생성."""
+    rx_label = f"{row_a[1]}-{row_b[1]}"
+    result = [row_a[0], rx_label, row_a[2]]
+    for va, vb in zip(row_a[_FEAT_START:], row_b[_FEAT_START:]):
+        result.append(abs(float(va) - float(vb)))
+    return result
+
+
+# ── Collection loop ───────────────────────────────────────────────────────────
 
 async def collect(label: str, csv_writer):
     loop = asyncio.get_event_loop()
@@ -218,10 +236,9 @@ async def collect(label: str, csv_writer):
     print(f"[FEATURE COLLECTOR] window={WINDOW_SIZE} frames | FFT_N={FFT_N}", flush=True)
     print("[FEATURE COLLECTOR] Ctrl+C to stop\n", flush=True)
 
-    frame_buf   = []
-    rssi_buf    = []
+    # 안테나별 독립 버퍼: {ant_idx: {"frames": [], "rssi": [], "win_count": 0}}
+    ant_bufs: dict = defaultdict(lambda: {"frames": [], "rssi": [], "win_count": 0})
     total_frames = 0
-    window_count = 0
 
     while True:
         try:
@@ -234,24 +251,43 @@ async def collect(label: str, csv_writer):
             if parsed is None:
                 continue
 
-            frame_buf.append(parsed["amplitudes"])
-            rssi_buf.append(parsed["rssi"] if parsed["rssi"] is not None else 0)
+            ant = parsed["ant"]
+            buf = ant_bufs[ant]
+            buf["frames"].append(parsed["amplitudes"])
+            buf["rssi"].append(parsed["rssi"] if parsed["rssi"] is not None else 0)
             total_frames += 1
 
-            print(f"  [{total_frames}] rssi={parsed['rssi']}  subs={len(parsed['amplitudes'])}", flush=True)
+            print(f"  [{total_frames}] ant={ant} rssi={parsed['rssi']} subs={len(parsed['amplitudes'])}", flush=True)
 
-            if len(frame_buf) >= WINDOW_SIZE:
-                start_idx = window_count * WINDOW_SIZE
-                row = extract_features(frame_buf, rssi_buf, start_idx, label)
+            # 윈도우가 꽉 찬 안테나 모두 처리
+            ready = [a for a, b in ant_bufs.items() if len(b["frames"]) >= WINDOW_SIZE]
+            if not ready:
+                continue
+
+            completed_rows: dict[int, list] = {}
+            for a in ready:
+                b = ant_bufs[a]
+                rx_label = f"RX{a + 1}"
+                start_idx = b["win_count"] * WINDOW_SIZE
+                row = extract_features(b["frames"][:WINDOW_SIZE], b["rssi"][:WINDOW_SIZE], start_idx, label, rx_label)
                 csv_writer.writerow(row)
-                window_count += 1
+                completed_rows[a] = row
+                b["win_count"] += 1
+                # 초과 프레임 보존
+                b["frames"] = b["frames"][WINDOW_SIZE:]
+                b["rssi"]   = b["rssi"][WINDOW_SIZE:]
                 print(
-                    f"[WIN {window_count}] start={start_idx} | "
-                    f"amp_mean={row[5]:.3f} window_var={row[11]:.4f} dom_f={row[15]:.4f}",
+                    f"[WIN {b['win_count']}] {rx_label} start={start_idx} | "
+                    f"amp_mean={row[5]:.3f} win_var={row[11]:.4f} entropy={row[17]:.3f} p2p={row[18]:.3f}",
                     flush=True,
                 )
-                frame_buf.clear()
-                rssi_buf.clear()
+
+            # RX간 차이 행 (2개 이상 안테나가 동시에 완성된 경우)
+            ant_list = sorted(completed_rows.keys())
+            for i in range(len(ant_list)):
+                for j in range(i + 1, len(ant_list)):
+                    csv_writer.writerow(diff_row(completed_rows[ant_list[i]], completed_rows[ant_list[j]]))
+                    print(f"  [DIFF] RX{ant_list[i]+1}-RX{ant_list[j]+1} 차이 행 저장", flush=True)
 
         except Exception as e:
             import traceback
@@ -260,7 +296,7 @@ async def collect(label: str, csv_writer):
             await asyncio.sleep(1)
 
 
-# ── Entry point ──────────────────────────────────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -268,7 +304,6 @@ if __name__ == "__main__":
         "--label",
         required=True,
         choices=["occupied", "unoccupied", "fall"],
-        help="수집 레이블: occupied / unoccupied / fall",
     )
     args = parser.parse_args()
 
