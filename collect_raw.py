@@ -14,8 +14,6 @@ Output: csi_features_<label>.csv
     window_var, spectral_total_power,
     low_band_ratio, mid_band_ratio, dominant_freq_idx, corr_mean_abs,
     spectral_entropy, peak_to_peak, skewness, kurtosis
-
-  rx="RX1-RX2" 행: 두 안테나 특징값의 절댓값 차이
 """
 
 import argparse
@@ -58,10 +56,6 @@ CSV_HEADER = [
     "kurtosis",
 ]
 
-# 수치 특징이 시작되는 열 인덱스 (label, rx, start 제외)
-_FEAT_START = 3
-
-
 # ── Parsing ──────────────────────────────────────────────────────────────────
 
 def parse_csi(raw: str) -> dict | None:
@@ -91,7 +85,7 @@ def parse_csi(raw: str) -> dict | None:
     except (IndexError, ValueError):
         rssi = None
 
-    # ESP32 CSI 포맷: ...,ant,... — ant 필드는 인덱스 19
+    # ESP32 CSI 포맷: ant 필드는 인덱스 19
     try:
         ant = int(parts[19])
     except (IndexError, ValueError):
@@ -213,15 +207,6 @@ def extract_features(frames: list, rssi_list: list, start: int, label: str, rx: 
     ]
 
 
-def diff_row(row_a: list, row_b: list) -> list:
-    """두 안테나 feature row의 절댓값 차이 행 생성."""
-    rx_label = f"{row_a[1]}-{row_b[1]}"
-    result = [row_a[0], rx_label, row_a[2]]
-    for va, vb in zip(row_a[_FEAT_START:], row_b[_FEAT_START:]):
-        result.append(abs(float(va) - float(vb)))
-    return result
-
-
 # ── Collection loop ───────────────────────────────────────────────────────────
 
 async def collect(label: str, csv_writer):
@@ -257,23 +242,17 @@ async def collect(label: str, csv_writer):
             buf["rssi"].append(parsed["rssi"] if parsed["rssi"] is not None else 0)
             total_frames += 1
 
-            print(f"  [{total_frames}] ant={ant} rssi={parsed['rssi']} subs={len(parsed['amplitudes'])}", flush=True)
+            print(f"  [{total_frames}] RX{ant+1} rssi={parsed['rssi']} subs={len(parsed['amplitudes'])}", flush=True)
 
-            # 윈도우가 꽉 찬 안테나 모두 처리
-            ready = [a for a, b in ant_bufs.items() if len(b["frames"]) >= WINDOW_SIZE]
-            if not ready:
-                continue
-
-            completed_rows: dict[int, list] = {}
-            for a in ready:
-                b = ant_bufs[a]
-                rx_label = f"RX{a + 1}"
+            # 윈도우가 꽉 찬 안테나 처리
+            for a, b in ant_bufs.items():
+                if len(b["frames"]) < WINDOW_SIZE:
+                    continue
+                rx_label  = f"RX{a + 1}"
                 start_idx = b["win_count"] * WINDOW_SIZE
                 row = extract_features(b["frames"][:WINDOW_SIZE], b["rssi"][:WINDOW_SIZE], start_idx, label, rx_label)
                 csv_writer.writerow(row)
-                completed_rows[a] = row
                 b["win_count"] += 1
-                # 초과 프레임 보존
                 b["frames"] = b["frames"][WINDOW_SIZE:]
                 b["rssi"]   = b["rssi"][WINDOW_SIZE:]
                 print(
@@ -281,13 +260,6 @@ async def collect(label: str, csv_writer):
                     f"amp_mean={row[5]:.3f} win_var={row[11]:.4f} entropy={row[17]:.3f} p2p={row[18]:.3f}",
                     flush=True,
                 )
-
-            # RX간 차이 행 (2개 이상 안테나가 동시에 완성된 경우)
-            ant_list = sorted(completed_rows.keys())
-            for i in range(len(ant_list)):
-                for j in range(i + 1, len(ant_list)):
-                    csv_writer.writerow(diff_row(completed_rows[ant_list[i]], completed_rows[ant_list[j]]))
-                    print(f"  [DIFF] RX{ant_list[i]+1}-RX{ant_list[j]+1} 차이 행 저장", flush=True)
 
         except Exception as e:
             import traceback
