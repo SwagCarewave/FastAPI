@@ -30,7 +30,9 @@ def root():
 
 @app.websocket("/ws/presence")
 async def presence_ws(websocket: WebSocket):
+    print(f"[WS] /ws/presence 연결 시도 — {websocket.client}", flush=True)
     await websocket.accept()
+    print(f"[WS] /ws/presence accept 완료 — {websocket.client}", flush=True)
     state.presence_clients.append(websocket)
     try:
         while True:
