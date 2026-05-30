@@ -85,13 +85,10 @@ def parse_csi(raw: str) -> dict | None:
     except (IndexError, ValueError):
         rssi = None
 
-    # ESP32 CSI 포맷: ant 필드는 인덱스 19
-    try:
-        ant = int(parts[19])
-    except (IndexError, ValueError):
-        ant = 0
+    # 안테나 레이블은 parts[1]에 "RX1"/"RX2"/"RX3" 문자열로 존재
+    rx = parts[1] if len(parts) > 1 else "RX1"
 
-    return {"amplitudes": amplitudes, "rssi": rssi, "ant": ant}
+    return {"amplitudes": amplitudes, "rssi": rssi, "rx": rx}
 
 
 # ── Preprocessing ─────────────────────────────────────────────────────────────
@@ -236,19 +233,18 @@ async def collect(label: str, csv_writer):
             if parsed is None:
                 continue
 
-            ant = parsed["ant"]
-            buf = ant_bufs[ant]
+            rx = parsed["rx"]
+            buf = ant_bufs[rx]
             buf["frames"].append(parsed["amplitudes"])
             buf["rssi"].append(parsed["rssi"] if parsed["rssi"] is not None else 0)
             total_frames += 1
 
-            print(f"  [{total_frames}] RX{ant+1} rssi={parsed['rssi']} subs={len(parsed['amplitudes'])}", flush=True)
+            print(f"  [{total_frames}] {rx} rssi={parsed['rssi']} subs={len(parsed['amplitudes'])}", flush=True)
 
             # 윈도우가 꽉 찬 안테나 처리
-            for a, b in ant_bufs.items():
+            for rx_label, b in ant_bufs.items():
                 if len(b["frames"]) < WINDOW_SIZE:
                     continue
-                rx_label  = f"RX{a + 1}"
                 start_idx = b["win_count"] * WINDOW_SIZE
                 row = extract_features(b["frames"][:WINDOW_SIZE], b["rssi"][:WINDOW_SIZE], start_idx, label, rx_label)
                 csv_writer.writerow(row)
