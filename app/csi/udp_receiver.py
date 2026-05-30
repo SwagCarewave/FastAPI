@@ -114,8 +114,16 @@ async def udp_receiver():
                 continue
 
             buf["since_last_pred"] = 0
-            feat_dict   = extract_features(list(buf["frames"]), list(buf["rssi"]))
-            is_occupied, confidence = predictor.predict(feat_dict, rx)
+            frames_snap = list(buf["frames"])
+            rssi_snap   = list(buf["rssi"])
+
+            # CPU 집약 작업을 스레드풀에서 실행 — event loop 블로킹 방지
+            feat_dict = await loop.run_in_executor(
+                None, extract_features, frames_snap, rssi_snap
+            )
+            is_occupied, confidence = await loop.run_in_executor(
+                None, predictor.predict, feat_dict, rx
+            )
 
             if is_occupied:
                 if confidence >= CONFIDENCE_THRESHOLD:
