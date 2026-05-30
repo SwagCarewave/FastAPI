@@ -73,7 +73,7 @@ def parse_csi(raw: str) -> dict | None:
     amplitudes = []
     for i in range(0, len(nums) - 1, 2):
         amp = math.sqrt(nums[i] ** 2 + nums[i + 1] ** 2)
-        if amp > 1.0:
+        if amp > 0:  # 순수 0(guard/null subcarrier)만 제외
             amplitudes.append(amp)
 
     if not amplitudes:
