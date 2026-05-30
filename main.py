@@ -35,9 +35,7 @@ async def presence_ws(websocket: WebSocket):
     try:
         while True:
             await websocket.receive_text()
-    except Exception:
-        pass
-    finally:
+    except WebSocketDisconnect:
         if websocket in state.presence_clients:
             state.presence_clients.remove(websocket)
 
@@ -49,8 +47,6 @@ async def fall_ws(websocket: WebSocket):
     try:
         while True:
             await websocket.receive_text()
-    except Exception:
-        pass
-    finally:
+    except WebSocketDisconnect:
         if websocket in state.fall_clients:
             state.fall_clients.remove(websocket)
