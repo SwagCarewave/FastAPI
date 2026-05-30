@@ -23,7 +23,7 @@ FALL_COOLDOWN_SEC   = 60
 FALL_CONFIRM_FRAMES = 2
 CONFIDENCE_THRESHOLD = 0.80   # 재실 판정 최소 신뢰도
 UNOCCUPIED_CONFIRM   = 2      # 공실 전환에 필요한 연속 예측 횟수
-WINDOW_STEP          = 30     # 슬라이딩 윈도우 간격 (예측 주기)
+WINDOW_STEP          = 40     # 슬라이딩 윈도우 간격 (예측 주기)
 
 _fall_candidate_count = 0
 
