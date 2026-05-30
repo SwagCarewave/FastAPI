@@ -1,7 +1,7 @@
 import asyncio
 import os
 import socket
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime, timezone, timedelta
 
 import httpx
@@ -18,12 +18,12 @@ UDP_IP  = "0.0.0.0"
 UDP_PORT = 5005
 KST     = timezone(timedelta(hours=9))
 
-SPRINGBOOT_URL     = os.getenv("SPRINGBOOT_URL", "")
-ROOM               = os.getenv("ROOM", "101호")
-FALL_COOLDOWN_SEC  = 60
-FALL_CONFIRM_FRAMES    = 2
-CONFIDENCE_THRESHOLD   = 0.80  # 재실 판정 최소 신뢰도
-UNOCCUPIED_CONFIRM     = 3     # 공실 전환에 필요한 연속 예측 횟수
+SPRINGBOOT_URL      = os.getenv("SPRINGBOOT_URL", "")
+FALL_COOLDOWN_SEC   = 60
+FALL_CONFIRM_FRAMES = 2
+CONFIDENCE_THRESHOLD = 0.80   # 재실 판정 최소 신뢰도
+UNOCCUPIED_CONFIRM   = 2      # 공실 전환에 필요한 연속 예측 횟수
+WINDOW_STEP          = 50     # 슬라이딩 윈도우 간격 (예측 주기)
 
 _fall_candidate_count = 0
 
@@ -60,15 +60,16 @@ async def udp_receiver():
     sock.setblocking(False)
 
     print(f"[UDP] Listening on {UDP_IP}:{UDP_PORT}", flush=True)
-    print(f"[UDP] ML 모델 준비: {predictor.ready}", flush=True)
+    print(f"[UDP] ML 모델 준비: {predictor.ready} | step={WINDOW_STEP}프레임마다 예측", flush=True)
 
-    # 안테나별 독립 버퍼
-    ant_bufs: dict = defaultdict(lambda: {"frames": [], "rssi": [], "win_count": 0})
+    # 슬라이딩 윈도우 버퍼 (maxlen=WINDOW_SIZE → 자동으로 오래된 프레임 제거)
+    ant_bufs = defaultdict(lambda: {
+        "frames":         deque(maxlen=WINDOW_SIZE),
+        "rssi":           deque(maxlen=WINDOW_SIZE),
+        "since_last_pred": 0,   # 마지막 예측 이후 수신 프레임 수
+    })
 
-    # 안테나별 최신 예측 결과 (다수결 집계용)
-    ant_predictions: dict[str, bool] = {}
-
-    # 재실→공실 전환용 연속 공실 카운터
+    ant_predictions:      dict[str, bool] = {}
     ant_unoccupied_streak: dict[str, int] = defaultdict(int)
 
     global _fall_candidate_count
@@ -76,7 +77,7 @@ async def udp_receiver():
     while True:
         try:
             data, _ = await loop.sock_recvfrom(sock, 65535)
-            raw_str  = data.decode("utf-8", errors="ignore")
+            raw_str   = data.decode("utf-8", errors="ignore")
             timestamp = datetime.now(KST).isoformat()
 
             parsed = parse_csi(raw_str)
@@ -87,8 +88,9 @@ async def udp_receiver():
             buf = ant_bufs[rx]
             buf["frames"].append(parsed["amplitudes"])
             buf["rssi"].append(parsed["rssi"] if parsed["rssi"] is not None else 0)
+            buf["since_last_pred"] += 1
 
-            # ── 낙상 감지 (프레임 단위 frame_diff) ───────────────────────────
+            # ── 낙상 감지 (프레임 단위) ───────────────────────────────────────
             _, _, _, frame_diff = detector.update(parsed["amplitudes"])
 
             if frame_diff >= FRAME_DIFF_THRESHOLD:
@@ -100,64 +102,53 @@ async def udp_receiver():
                 _fall_candidate_count = 0
                 state.last_fall_event_at = datetime.now(KST)
                 state.set_fall_lock(30)
-
-                fall_data = {
-                    "event_type": "낙상 감지",
-                    "occurred_at": timestamp,
-                    "status": "미확인",
-                }
+                fall_data = {"event_type": "낙상 감지", "occurred_at": timestamp, "status": "미확인"}
                 print(f"[EVENT] 낙상 감지 — {timestamp}", flush=True)
                 asyncio.create_task(_send_fall_event(timestamp))
                 await state.broadcast_fall(fall_data)
 
-            # ── ML 재실 예측 (윈도우 단위) ───────────────────────────────────
+            # ── ML 재실 예측 (슬라이딩 윈도우) ──────────────────────────────
             if len(buf["frames"]) < WINDOW_SIZE:
                 continue
+            if buf["since_last_pred"] < WINDOW_STEP:
+                continue
 
-            feat_dict   = extract_features(buf["frames"][:WINDOW_SIZE], buf["rssi"][:WINDOW_SIZE])
+            buf["since_last_pred"] = 0
+            feat_dict   = extract_features(list(buf["frames"]), list(buf["rssi"]))
             is_occupied, confidence = predictor.predict(feat_dict, rx)
 
-            buf["win_count"] += 1
-            buf["frames"] = buf["frames"][WINDOW_SIZE:]
-            buf["rssi"]   = buf["rssi"][WINDOW_SIZE:]
-
             if is_occupied:
-                # 재실 예측: 신뢰도 0.80 이상이면 즉시 재실 전환
                 if confidence >= CONFIDENCE_THRESHOLD:
                     ant_predictions[rx] = True
                     ant_unoccupied_streak[rx] = 0
                 else:
                     is_occupied = ant_predictions.get(rx, True)
-                    print(f"[ML] {rx} → 낮은 신뢰도({confidence:.2f}) 재실 — 이전 상태 유지", flush=True)
+                    print(f"[ML] {rx} 낮은 신뢰도({confidence:.2f}) 재실 — 이전 상태 유지", flush=True)
             else:
-                # 공실 예측: 연속 N번 나와야 공실 전환 (신뢰도 무관)
                 ant_unoccupied_streak[rx] += 1
                 if ant_unoccupied_streak[rx] >= UNOCCUPIED_CONFIRM:
                     ant_predictions[rx] = False
                 else:
                     is_occupied = ant_predictions.get(rx, False)
-                    print(f"[ML] {rx} → 공실 예측 {ant_unoccupied_streak[rx]}/{UNOCCUPIED_CONFIRM}번째", flush=True)
+                    print(f"[ML] {rx} 공실 예측 {ant_unoccupied_streak[rx]}/{UNOCCUPIED_CONFIRM}번째", flush=True)
 
-            # 수신된 안테나 다수결 집계
             votes        = list(ant_predictions.values())
             final_result = sum(votes) > len(votes) / 2
             status_str   = "재실" if final_result else "공실"
 
             print(
                 f"[ML] {rx} → {'재실' if is_occupied else '공실'} "
-                f"(confidence={confidence:.2f}) | 종합={status_str}",
+                f"(conf={confidence:.2f}) | 종합={status_str}",
                 flush=True,
             )
 
             state.update_from_csi(final_result, timestamp)
-
-            presence_data = {
+            await state.broadcast_presence({
                 "status":      status_str,
                 "confidence":  round(confidence, 4),
                 "rx":          rx,
                 "detected_at": timestamp,
-            }
-            await state.broadcast_presence(presence_data)
+            })
 
         except Exception as e:
             import traceback
