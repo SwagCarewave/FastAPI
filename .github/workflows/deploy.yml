@@ -19,3 +19,4 @@ jobs:
           docker rm carewave-container || true
           docker run -d --name carewave-container -p 8000:8000 -p 5005:5005/udp --restart unless-stopped carewave-fastapi
           docker image prune -f
+          docker container prune -f

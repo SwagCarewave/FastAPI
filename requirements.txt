@@ -2,6 +2,7 @@ fastapi
 uvicorn
 websockets
 scikit-learn
+joblib
 numpy
 pandas
 openai

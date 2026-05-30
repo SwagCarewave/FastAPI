@@ -6,4 +6,15 @@ __pycache__/
 dist/
 .DS_Store
 .claude/
-csi_data.csv
+
+# 데이터 수집 CSV
+csi_raw_*.csv
+csi_features_*.csv
+
+# ML 모델 / 결과물
+*.pkl
+ml/*.png
+ml/eda_*.png
+ml/confusion_matrix.png
+ml/feature_importance.png
+ml/model_comparison.png

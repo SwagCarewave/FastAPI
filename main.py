@@ -1,8 +1,8 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
-from app.ruview.udp_receiver import udp_receiver
-from app.ruview.state import state
+from app.csi.udp_receiver import udp_receiver
+from app.csi.state import state
 from app.api.routes import router
 
 app = FastAPI()
