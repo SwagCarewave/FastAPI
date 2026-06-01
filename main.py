@@ -52,3 +52,15 @@ async def fall_ws(websocket: WebSocket):
     except WebSocketDisconnect:
         if websocket in state.fall_clients:
             state.fall_clients.remove(websocket)
+
+
+@app.websocket("/ws/csi")
+async def csi_ws(websocket: WebSocket):
+    await websocket.accept()
+    state.csi_clients.append(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        if websocket in state.csi_clients:
+            state.csi_clients.remove(websocket)

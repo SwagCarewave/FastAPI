@@ -85,6 +85,22 @@ async def udp_receiver():
                 continue
 
             rx  = parsed["rx"]
+
+            # ── CSI 실시간 그래프 broadcast ────────────────────────────────
+            amps = parsed["amplitudes"]
+            n    = len(amps)
+            if n >= 5:
+                step        = n // 5
+                sample_amps = [round(amps[i * step], 4) for i in range(5)]
+            else:
+                sample_amps = [round(a, 4) for a in amps]
+            await state.broadcast_csi({
+                "timestamp":   timestamp,
+                "rx":          rx,
+                "subcarriers": sample_amps,
+                "amp_mean":    round(sum(amps) / n, 4),
+            })
+
             buf = ant_bufs[rx]
             buf["frames"].append(parsed["amplitudes"])
             buf["rssi"].append(parsed["rssi"] if parsed["rssi"] is not None else 0)
