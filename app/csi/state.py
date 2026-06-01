@@ -36,6 +36,7 @@ class AppState:
         self.breathing_clients: list[WebSocket] = []
         self.presence_clients: list[WebSocket] = []
         self.fall_clients: list[WebSocket] = []
+        self.csi_clients: list[WebSocket] = []
 
     def set_fall_lock(self, duration_sec: int = 30):
         self._fall_locked_until = datetime.now(KST) + timedelta(seconds=duration_sec)
@@ -105,6 +106,9 @@ class AppState:
     async def broadcast_fall(self, data: dict):
         self.last_fall_data = data
         await self._send_all(self.fall_clients, data)
+
+    async def broadcast_csi(self, data: dict):
+        await self._send_all(self.csi_clients, data)
 
 
 state = AppState()
