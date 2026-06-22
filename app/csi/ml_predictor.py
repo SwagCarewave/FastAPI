@@ -4,8 +4,8 @@ feature_extractor.extract_features() 반환값을 입력으로 받음.
 """
 import os
 
-_MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'model.pkl')
-_FEAT_PATH  = os.path.join(os.path.dirname(__file__), '..', '..', 'feature_cols.pkl')
+_MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'ml', 'model.pkl')
+_FEAT_PATH  = os.path.join(os.path.dirname(__file__), '..', '..', 'ml', 'feature_cols.pkl')
 
 
 class MLPredictor:

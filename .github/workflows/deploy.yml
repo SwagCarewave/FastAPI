@@ -17,6 +17,8 @@ jobs:
           docker build -t carewave-fastapi .
           docker stop $(docker ps -q --filter "publish=8000") || true
           docker rm carewave-container || true
-          docker run -d --name carewave-container -p 8000:8000 -p 5005:5005/udp --restart unless-stopped carewave-fastapi
+          docker run -d --name carewave-container -p 8000:8000 -p 5005:5005/udp --restart unless-stopped \
+            -e SPRINGBOOT_URL=${{ secrets.SPRINGBOOT_URL }} \
+            carewave-fastapi
           docker image prune -f
           docker container prune -f

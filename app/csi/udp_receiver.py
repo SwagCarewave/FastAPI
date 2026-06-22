@@ -20,7 +20,7 @@ KST     = timezone(timedelta(hours=9))
 
 SPRINGBOOT_URL      = os.getenv("SPRINGBOOT_URL", "")
 FALL_COOLDOWN_SEC   = 60
-FALL_CONFIRM_FRAMES = 2
+FALL_CONFIRM_FRAMES = 5
 CONFIDENCE_THRESHOLD = 0.80   # 재실 판정 최소 신뢰도
 UNOCCUPIED_CONFIRM   = 2      # 공실 전환에 필요한 연속 예측 횟수
 WINDOW_STEP          = 20     # 슬라이딩 윈도우 간격 (예측 주기)
@@ -106,10 +106,10 @@ async def udp_receiver():
             buf["rssi"].append(parsed["rssi"] if parsed["rssi"] is not None else 0)
             buf["since_last_pred"] += 1
 
-            # ── 낙상 감지 (프레임 단위) ───────────────────────────────────────
+            # ── 낙상 감지 (프레임 단위, 재실 중일 때만) ──────────────────────
             _, _, _, frame_diff = detector.update(parsed["amplitudes"])
 
-            if frame_diff >= FRAME_DIFF_THRESHOLD:
+            if state.stable_presence and frame_diff >= FRAME_DIFF_THRESHOLD:
                 _fall_candidate_count += 1
             else:
                 _fall_candidate_count = 0
