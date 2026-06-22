@@ -1,7 +1,5 @@
 # CareWave FastAPI API 명세서
 
-Base URL: `http://<서버IP>:8000`
-
 ---
 
 ## REST API
@@ -10,7 +8,7 @@ Base URL: `http://<서버IP>:8000`
 
 ### 1. 서버 상태 확인
 
-| 항목 | 내용 |
+| 항목 | 내용 | 
 |---|---|
 | **이름** | 서버 헬스체크 |
 | **Method** | GET |
