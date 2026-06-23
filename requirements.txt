@@ -10,4 +10,3 @@ sqlalchemy
 pymysql
 python-dotenv
 httpx
-xgboost==2.0.3
