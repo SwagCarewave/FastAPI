@@ -27,7 +27,7 @@ UDP_PORT = 5005
 KST      = timezone(timedelta(hours=9))
 
 
-async def collect(label: str, feat_writer, raw_writer):
+async def collect(label: str, experiment_id: str, feat_writer, raw_writer):
     loop = asyncio.get_event_loop()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -60,11 +60,11 @@ async def collect(label: str, feat_writer, raw_writer):
 
             # ── Raw CSV 저장 (프레임 단위) ──────────────────────────────
             if not raw_header_written:
-                raw_header_cols = ["timestamp", "label", "rx"] + [f"sub_{i}" for i in range(len(amps))]
+                raw_header_cols = ["experiment_id", "timestamp", "label", "rx"] + [f"sub_{i}" for i in range(len(amps))]
                 raw_writer.writerow(raw_header_cols)
                 raw_header_written = True
 
-            raw_writer.writerow([timestamp, label, rx] + [round(a, 6) for a in amps])
+            raw_writer.writerow([experiment_id, timestamp, label, rx] + [round(a, 6) for a in amps])
 
             # ── Feature CSV 저장 (윈도우 단위) ─────────────────────────
             buf = ant_bufs[rx]
@@ -101,6 +101,7 @@ if __name__ == "__main__":
     parser.add_argument("--label", required=True, choices=["occupied", "unoccupied", "fall", "skeleton"])
     args = parser.parse_args()
 
+    experiment_id = datetime.now(KST).strftime("%Y%m%d_%H%M%S")
     feat_path = f"csi_features_{args.label}.csv"
     raw_path  = f"csi_raw_{args.label}.csv"
 
@@ -111,10 +112,11 @@ if __name__ == "__main__":
         raw_writer  = csv.writer(rf)
         feat_writer.writerow(CSV_HEADER)
 
-        print(f"[CSV] feature → {feat_path}", flush=True)
-        print(f"[CSV] raw     → {raw_path}",  flush=True)
+        print(f"[CSV] feature       → {feat_path}", flush=True)
+        print(f"[CSV] raw           → {raw_path}",  flush=True)
+        print(f"[CSV] experiment_id → {experiment_id}", flush=True)
 
         try:
-            asyncio.run(collect(args.label, feat_writer, raw_writer))
+            asyncio.run(collect(args.label, experiment_id, feat_writer, raw_writer))
         except KeyboardInterrupt:
             print(f"\n[DONE] 저장 완료: {feat_path}, {raw_path}", flush=True)
