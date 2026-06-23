@@ -146,7 +146,7 @@ async def udp_receiver():
                     ant_predictions[rx] = True
                     ant_unoccupied_streak[rx] = 0
                 else:
-                    is_occupied = ant_predictions.get(rx, True)
+                    is_occupied = ant_predictions.get(rx, False)
                     print(f"[ML] {rx} 낮은 신뢰도({confidence:.2f}) 재실 — 이전 상태 유지", flush=True)
             else:
                 ant_unoccupied_streak[rx] += 1
