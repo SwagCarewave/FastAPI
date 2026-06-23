@@ -10,4 +10,4 @@ sqlalchemy
 pymysql
 python-dotenv
 httpx
-xgboost
+xgboost[cpu]
