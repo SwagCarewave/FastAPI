@@ -7,6 +7,10 @@ import re
 
 import numpy as np
 
+# 802.11 20MHz(HT20) CSI 64 서브캐리어 중 DC/guard band로 항상 0인 위치 (12개)
+# → 이 12개를 빼면 실데이터 52개가 남음
+NULL_SUBCARRIER_INDICES = {0, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37}
+
 WINDOW_SIZE     = 100
 FFT_N           = 128
 HAMPEL_HALF_WIN = 5
@@ -43,10 +47,18 @@ def parse_csi(raw: str) -> dict | None:
     if len(nums) < 4:
         return None
 
-    amplitudes = [
+    all_amplitudes = [
         math.sqrt(nums[i] ** 2 + nums[i + 1] ** 2)
         for i in range(0, len(nums) - 1, 2)
     ]
+
+    if len(all_amplitudes) == 64:
+        amplitudes = [
+            a for idx, a in enumerate(all_amplitudes)
+            if idx not in NULL_SUBCARRIER_INDICES
+        ]
+    else:
+        amplitudes = all_amplitudes
 
     if not any(amplitudes):
         return None
