@@ -6,6 +6,8 @@ __pycache__/
 dist/
 .DS_Store
 .claude/
+occupancy_dev_log.md
+notes/
 
 # 데이터 수집 CSV
 csi_raw_*.csv

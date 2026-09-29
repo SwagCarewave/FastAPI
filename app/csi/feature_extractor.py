@@ -43,13 +43,12 @@ def parse_csi(raw: str) -> dict | None:
     if len(nums) < 4:
         return None
 
-    amplitudes = []
-    for i in range(0, len(nums) - 1, 2):
-        amp = math.sqrt(nums[i] ** 2 + nums[i + 1] ** 2)
-        if amp > 0:
-            amplitudes.append(amp)
+    amplitudes = [
+        math.sqrt(nums[i] ** 2 + nums[i + 1] ** 2)
+        for i in range(0, len(nums) - 1, 2)
+    ]
 
-    if not amplitudes:
+    if not any(amplitudes):
         return None
 
     parts = raw.split(',')
