@@ -19,10 +19,9 @@ UDP_PORT = 5005
 KST     = timezone(timedelta(hours=9))
 
 SPRINGBOOT_URL      = os.getenv("SPRINGBOOT_URL", "")
-FALL_COOLDOWN_SEC   = 60
-FALL_CONFIRM_FRAMES = 5
-CONFIDENCE_THRESHOLD = 0.65   # 재실 판정 최소 신뢰도
-UNOCCUPIED_CONFIRM   = 2      # 공실 전환에 필요한 연속 예측 횟수
+FALL_COOLDOWN_SEC    = 60
+FALL_CONFIRM_FRAMES  = 5
+OCCUPIED_PROB_THRESHOLD = 0.70  # 안테나 평균 재실 확률 임계값
 WINDOW_STEP          = 20     # 슬라이딩 윈도우 간격 (예측 주기)
 
 _fall_candidate_count = 0
@@ -69,8 +68,7 @@ async def udp_receiver():
         "since_last_pred": 0,   # 마지막 예측 이후 수신 프레임 수
     })
 
-    ant_predictions:      dict[str, bool] = {}
-    ant_unoccupied_streak: dict[str, int] = defaultdict(int)
+    ant_probs: dict[str, float] = {}  # 안테나별 최신 재실 확률
 
     global _fall_candidate_count
 
@@ -141,35 +139,24 @@ async def udp_receiver():
                 None, predictor.predict, feat_dict, rx
             )
 
-            if is_occupied:
-                if confidence >= CONFIDENCE_THRESHOLD:
-                    ant_predictions[rx] = True
-                    ant_unoccupied_streak[rx] = 0
-                else:
-                    is_occupied = ant_predictions.get(rx, False)
-                    print(f"[ML] {rx} 낮은 신뢰도({confidence:.2f}) 재실 — 이전 상태 유지", flush=True)
-            else:
-                ant_unoccupied_streak[rx] += 1
-                if ant_unoccupied_streak[rx] >= UNOCCUPIED_CONFIRM:
-                    ant_predictions[rx] = False
-                else:
-                    is_occupied = ant_predictions.get(rx, False)
-                    print(f"[ML] {rx} 공실 예측 {ant_unoccupied_streak[rx]}/{UNOCCUPIED_CONFIRM}번째", flush=True)
+            # 안테나별 재실 확률 누적 (confidence = proba[1])
+            ant_probs[rx] = confidence
 
-            votes        = list(ant_predictions.values())
-            final_result = sum(votes) > len(votes) / 2
+            avg_prob = sum(ant_probs.values()) / len(ant_probs)
+            final_result = avg_prob >= OCCUPIED_PROB_THRESHOLD
             status_str   = "재실" if final_result else "공실"
 
             print(
                 f"[ML] {rx} → {'재실' if is_occupied else '공실'} "
-                f"(conf={confidence:.2f}) | 종합={status_str}",
+                f"(prob={confidence:.2f}) | 평균={avg_prob:.2f} | 종합={status_str}",
                 flush=True,
             )
 
             state.update_from_csi(final_result, timestamp)
+            display_conf = avg_prob if final_result else (1.0 - avg_prob)
             await state.broadcast_presence({
                 "status":      status_str,
-                "confidence":  round(confidence, 4),
+                "confidence":  round(display_conf, 4),
                 "rx":          rx,
                 "detected_at": timestamp,
             })

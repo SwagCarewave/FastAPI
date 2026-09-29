@@ -54,12 +54,12 @@ class MLPredictor:
                 df[col] = 0.0
         df = df[self.feature_cols]
 
-        is_occupied = bool(self.model.predict(df)[0])
         try:
             proba      = self.model.predict_proba(df)[0]
-            confidence = float(proba[1] if is_occupied else proba[0])
+            confidence = float(proba[1])   # 항상 재실 확률 (0~1)
         except AttributeError:
-            confidence = 1.0
+            confidence = float(bool(self.model.predict(df)[0]))
+        is_occupied = confidence >= 0.5
 
         return is_occupied, confidence
 

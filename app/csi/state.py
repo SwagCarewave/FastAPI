@@ -6,8 +6,8 @@ from fastapi import WebSocket
 KST = timezone(timedelta(hours=9))
 
 EMA_ALPHA = 0.05
-PRESENCE_WINDOW = 30
-PRESENCE_THRESHOLD = 0.7
+PRESENCE_WINDOW = 3
+PRESENCE_THRESHOLD = 0.5
 
 # 실제 호흡 주파수 범위 (Hz) — 이 범위 밖은 노이즈로 간주
 BREATHING_FREQ_MIN = 0.1   # 6 bpm
@@ -37,6 +37,12 @@ class AppState:
         self.presence_clients: list[WebSocket] = []
         self.fall_clients: list[WebSocket] = []
         self.csi_clients: list[WebSocket] = []
+
+    @property
+    def presence_ratio(self) -> float:
+        if len(self._presence_buffer) == 0:
+            return 0.0
+        return sum(self._presence_buffer) / len(self._presence_buffer)
 
     def set_fall_lock(self, duration_sec: int = 30):
         self._fall_locked_until = datetime.now(KST) + timedelta(seconds=duration_sec)
